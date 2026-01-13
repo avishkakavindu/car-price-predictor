@@ -23,6 +23,26 @@ export const CAR_BRANDS = [
   'Other'
 ] as const;
 
+// Popular car models by brand (Sri Lankan market)
+export const CAR_MODELS: Record<string, string[]> = {
+  'TOYOTA': ['Corolla', 'Prius', 'Aqua', 'Vitz', 'Land Cruiser', 'Camry', 'Yaris', 'Hilux', 'Fortuner', 'RAV4', 'Axio', 'Premio', 'Allion', 'Voxy', 'Noah', 'Other'],
+  'SUZUKI': ['Alto', 'Wagon R', 'Swift', 'Celerio', 'Vitara', 'Ertiga', 'Dzire', 'Baleno', 'S-Presso', 'Jimny', 'Other'],
+  'NISSAN': ['Sunny', 'March', 'Tiida', 'X-Trail', 'Kicks', 'Leaf', 'Navara', 'Caravan', 'Sylphy', 'Other'],
+  'HONDA': ['Fit', 'Civic', 'Vezel', 'Grace', 'CR-V', 'Accord', 'City', 'Insight', 'Freed', 'Odyssey', 'Other'],
+  'MITSUBISHI': ['Lancer', 'Montero', 'Pajero', 'Outlander', 'ASX', 'Mirage', 'L300', 'Triton', 'Other'],
+  'PERODUA': ['Axia', 'Bezza', 'Myvi', 'Alza', 'Aruz', 'Other'],
+  'MICRO': ['Panda', 'Other'],
+  'HYUNDAI': ['i10', 'i20', 'Elantra', 'Accent', 'Santa Fe', 'Tucson', 'Creta', 'Venue', 'Verna', 'Other'],
+  'MAZDA': ['Demio', 'Axela', 'Atenza', 'CX-3', 'CX-5', 'Premacy', 'Biante', 'Other'],
+  'MERCEDES-BENZ': ['C-Class', 'E-Class', 'S-Class', 'A-Class', 'GLA', 'GLC', 'GLE', 'Other'],
+  'TATA': ['Nano', 'Indica', 'Indigo', 'Safari', 'Nexon', 'Other'],
+  'KIA': ['Picanto', 'Rio', 'Cerato', 'Sportage', 'Sorento', 'Seltos', 'Carnival', 'Other'],
+  'DAIHATSU': ['Mira', 'Move', 'Terios', 'Cuore', 'Sirion', 'Other'],
+  'BMW': ['3 Series', '5 Series', '7 Series', 'X1', 'X3', 'X5', 'X6', 'Other'],
+  'RENAULT': ['Clio', 'Megane', 'Duster', 'Captur', 'Kwid', 'Other'],
+  'Other': ['Other']
+};
+
 // Gear/Transmission types
 export const GEAR_TYPES = ['Automatic', 'Manual'] as const;
 

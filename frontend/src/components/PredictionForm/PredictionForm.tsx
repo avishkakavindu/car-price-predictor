@@ -6,6 +6,7 @@ import React, { useState } from 'react';
 import type { CarData, ValidationErrors, PredictionResponse, ShapData } from '../../types';
 import {
   CAR_BRANDS,
+  CAR_MODELS,
   GEAR_TYPES,
   FUEL_TYPES,
   TOWNS,
@@ -48,6 +49,7 @@ const PredictionForm: React.FC<PredictionFormProps> = ({
 
   const [errors, setErrors] = useState<ValidationErrors>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [availableModels, setAvailableModels] = useState<string[]>([]);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     const { name, value } = e.target;
@@ -58,6 +60,13 @@ const PredictionForm: React.FC<PredictionFormProps> = ({
         ? Number(value)
         : value
     };
+
+    // If brand changes, update available models and reset model selection
+    if (name === 'Brand') {
+      const models = CAR_MODELS[value] || [];
+      setAvailableModels(models);
+      updatedData.Model = ''; // Reset model when brand changes
+    }
 
     setFormData(updatedData);
     setErrors(prev => ({ ...prev, [name]: '' }));
@@ -147,16 +156,28 @@ const PredictionForm: React.FC<PredictionFormProps> = ({
 
           <div className="form-group">
             <label htmlFor="Model">Model *</label>
-            <input
-              type="text"
+            <select
               id="Model"
               name="Model"
               value={formData.Model}
               onChange={handleChange}
-              placeholder="e.g., Corolla"
               className={errors.Model ? 'error' : ''}
               required
-            />
+              disabled={!formData.Brand || availableModels.length === 0}
+            >
+              <option value="">
+                {!formData.Brand
+                  ? 'Select a brand first'
+                  : availableModels.length === 0
+                  ? 'No models available'
+                  : 'Select model'}
+              </option>
+              {availableModels.map((model) => (
+                <option key={model} value={model}>
+                  {model}
+                </option>
+              ))}
+            </select>
             {errors.Model && <span className="error-text">{errors.Model}</span>}
           </div>
 
