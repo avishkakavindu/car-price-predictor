@@ -129,6 +129,18 @@ class ShapService:
             # Sort by importance (descending)
             feature_importance.sort(key=lambda x: x['importance'], reverse=True)
 
+            # Get individual SHAP values for this specific prediction
+            shap_values_for_instance = [
+                {
+                    'feature': feature_names[i],
+                    'shap_value': float(shap_values[0][i]),
+                    'feature_value': float(X_processed_df.iloc[0, i])
+                }
+                for i in range(len(feature_names))
+            ]
+            # Sort by absolute SHAP value (most impactful first)
+            shap_values_for_instance.sort(key=lambda x: abs(x['shap_value']), reverse=True)
+
             # Update cache with results
             result = {
                 'status': 'completed',
@@ -136,7 +148,8 @@ class ShapService:
                 'bar_chart': bar_chart,
                 'waterfall': waterfall,
                 'feature_importance': feature_importance[:10],  # Top 10
-                'base_value': float(explainer.expected_value)
+                'base_value': float(explainer.expected_value),
+                'shap_values': shap_values_for_instance  # Individual SHAP values for this prediction
             }
 
             self._update_cache(request_id, result)

@@ -89,6 +89,8 @@ Thumbs.db
 # SHAP cache
 backend/shap_cache/
 
+backend/.venv
+
 # Temporary files
 *.tmp
 *.temp

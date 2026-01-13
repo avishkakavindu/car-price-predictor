@@ -134,6 +134,30 @@
   transition: width 0.5s ease-out;
 }
 
+.shap-breakdown {
+  background: white;
+  border: 2px solid #e5e7eb;
+  border-radius: 12px;
+  padding: 2rem;
+  margin: 2rem 0;
+}
+
+.shap-breakdown h3 {
+  color: #1f2937;
+  margin: 0 0 0.5rem 0;
+  font-size: 1.4rem;
+}
+
+.shap-values-table {
+  margin-top: 1.5rem;
+}
+
+.shap-values-table table {
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
 .interpretation-guide {
   background: #f9fafb;
   border-radius: 12px;

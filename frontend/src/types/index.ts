@@ -57,6 +57,13 @@ export interface FeatureImportance {
   importance: number;
 }
 
+// Individual SHAP value for a feature
+export interface ShapValue {
+  feature: string;
+  shap_value: number;
+  feature_value: number;
+}
+
 // SHAP explanation data
 export interface ShapData {
   status: 'processing' | 'completed' | 'error';
@@ -65,6 +72,7 @@ export interface ShapData {
   waterfall?: string;  // Base64 encoded image
   feature_importance?: FeatureImportance[];
   base_value?: number;
+  shap_values?: ShapValue[];  // Individual SHAP values for this prediction
   error?: string;
 }
 
