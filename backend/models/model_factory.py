@@ -5,10 +5,8 @@ Model Factory for creating and managing model instances (Factory Pattern)
 from typing import Dict, Optional, List
 from .base_model import BaseModel
 from .xgboost_model import XGBoostModel
-
-# Future imports - uncomment when models are ready
-# from .random_forest_model import RandomForestModel
-# from .lightgbm_model import LightGBMModel
+from .lightgbm_model import LightGBMModel
+from .adaboost_model import AdaBoostModel
 
 
 class ModelFactory:
@@ -36,12 +34,16 @@ class ModelFactory:
             "path": "data/models/car_price_predictor_xgbr.pkl",
             "description": "XGBoost gradient boosting model",
         },
-        # Future models - uncomment when ready
-        # 'lightgbm': {
-        #     'class': LightGBMModel,
-        #     'path': 'data/models/car_price_predictor_lgbm.pkl',
-        #     'description': 'LightGBM gradient boosting model'
-        # }
+        "lightgbm": {
+            "class": LightGBMModel,
+            "path": "data/models/car_price_predictor_lgbm.pkl",
+            "description": "LightGBM gradient boosting model",
+        },
+        "adaboost": {
+            "class": AdaBoostModel,
+            "path": "data/models/car_price_predictor_adaboost.pkl",
+            "description": "AdaBoost ensemble model",
+        },
     }
 
     def __init__(self, base_path: str = ""):

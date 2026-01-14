@@ -8,16 +8,64 @@ import './ShapExplanation.css';
 
 interface ShapExplanationProps {
   shapData: ShapData;
+  availableModels?: string[];
+  selectedModel?: string;
+  onModelChange?: (modelName: string) => void;
+  isLoading?: boolean;
 }
 
-const ShapExplanation: React.FC<ShapExplanationProps> = ({ shapData }) => {
+const ShapExplanation: React.FC<ShapExplanationProps> = ({
+  shapData,
+  availableModels = [],
+  selectedModel = 'xgboost',
+  onModelChange,
+  isLoading = false
+}) => {
   if (!shapData || shapData.status !== 'completed') {
     return null;
   }
 
+  const getModelDisplayName = (model: string) => {
+    const names: { [key: string]: string } = {
+      'xgboost': 'XGBoost',
+      'lightgbm': 'LightGBM',
+      'adaboost': 'AdaBoost'
+    };
+    return names[model.toLowerCase()] || model.toUpperCase();
+  };
+
   return (
     <div className="shap-container">
-      <h2>Model Explanation (SHAP Analysis)</h2>
+      <div className="shap-header">
+        <h2>Model Explanation (SHAP Analysis)</h2>
+
+        {/* Model Selector */}
+        {availableModels.length > 1 && onModelChange && (
+          <div className="model-selector">
+            <label htmlFor="shap-model-select">Explain with:</label>
+            <select
+              id="shap-model-select"
+              value={selectedModel}
+              onChange={(e) => onModelChange(e.target.value)}
+              disabled={isLoading}
+              className="model-select"
+            >
+              {availableModels.map((model) => (
+                <option key={model} value={model}>
+                  {getModelDisplayName(model)}
+                </option>
+              ))}
+            </select>
+            {isLoading && <span className="loading-indicator">Loading...</span>}
+          </div>
+        )}
+      </div>
+
+      {/* Current Model Badge */}
+      <div className="current-model-badge">
+        Showing SHAP explanation for: <strong>{getModelDisplayName(shapData.model_name || selectedModel)}</strong>
+      </div>
+
       <p className="shap-description">
         SHAP (SHapley Additive exPlanations) shows how each feature contributed to the prediction.
       </p>

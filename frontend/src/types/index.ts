@@ -68,6 +68,7 @@ export interface ShapValue {
 export interface ShapData {
   status: 'processing' | 'completed' | 'error';
   progress?: number;
+  model_name?: string;  // Name of model used for SHAP
   bar_chart?: string;  // Base64 encoded image
   waterfall?: string;  // Base64 encoded image
   feature_importance?: FeatureImportance[];
@@ -80,6 +81,7 @@ export interface ShapData {
 export interface ShapGenerationResponse {
   success: boolean;
   request_id?: string;
+  model_name?: string;  // Name of model used for SHAP
   status?: string;
   message?: string;
   error?: string;

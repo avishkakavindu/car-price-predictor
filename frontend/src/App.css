@@ -73,6 +73,13 @@
   margin: 0;
 }
 
+.shap-loading-hint {
+  font-size: 0.9rem !important;
+  color: #9ca3af !important;
+  margin-top: 0.5rem !important;
+  font-style: italic;
+}
+
 @keyframes spin {
   0% { transform: rotate(0deg); }
   100% { transform: rotate(360deg); }

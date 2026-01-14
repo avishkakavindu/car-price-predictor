@@ -248,14 +248,19 @@ def generate_shap():
         # Convert to DataFrame
         input_df = pd.DataFrame([data])
 
-        # Start async SHAP generation
-        request_id = shap_service.generate_shap_async(model_obj.model, input_df)
+        # Start async SHAP generation with model name
+        request_id = shap_service.generate_shap_async(
+            model_obj.model,
+            input_df,
+            model_name=model_name
+        )
 
         return jsonify({
             'success': True,
             'request_id': request_id,
+            'model_name': model_name,
             'status': 'processing',
-            'message': f'SHAP generation started. Poll /api/shap/status/{request_id} for results.'
+            'message': f'SHAP generation started for {model_name}. Poll /api/shap/status/{request_id} for results.'
         })
 
     except Exception as e:

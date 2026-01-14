@@ -27,7 +27,16 @@ class ShapService:
 
     This service runs SHAP generation in background threads to avoid
     blocking the API, since SHAP computation can take several seconds.
+
+    Supports multiple model types:
+        - TreeExplainer: For tree-based models (XGBoost, LightGBM)
+        - KernelExplainer: For model-agnostic explanations (AdaBoost)
     """
+
+    # Models that use TreeExplainer (fast, tree-based)
+    TREE_BASED_MODELS = ['xgboost', 'lightgbm']
+    # Models that require KernelExplainer (slower, model-agnostic)
+    KERNEL_BASED_MODELS = ['adaboost']
 
     def __init__(self, max_workers: int = 2):
         """
@@ -43,7 +52,8 @@ class ShapService:
     def generate_shap_async(self,
                            model,
                            input_data: pd.DataFrame,
-                           request_id: Optional[str] = None) -> str:
+                           request_id: Optional[str] = None,
+                           model_name: str = 'xgboost') -> str:
         """
         Start async SHAP generation
 
@@ -51,6 +61,7 @@ class ShapService:
             model: The pipeline model (includes preprocessing)
             input_data: Raw input DataFrame (14 features)
             request_id: Optional UUID for tracking (generated if not provided)
+            model_name: Name of the model (xgboost, lightgbm, adaboost)
 
         Returns:
             request_id: UUID for tracking the SHAP generation
@@ -62,15 +73,16 @@ class ShapService:
         with self._lock:
             self._cache[request_id] = {
                 'status': 'processing',
-                'progress': 0
+                'progress': 0,
+                'model_name': model_name
             }
 
         # Submit to thread pool
-        self.executor.submit(self._generate_shap, model, input_data, request_id)
+        self.executor.submit(self._generate_shap, model, input_data, request_id, model_name)
 
         return request_id
 
-    def _generate_shap(self, model, input_data: pd.DataFrame, request_id: str):
+    def _generate_shap(self, model, input_data: pd.DataFrame, request_id: str, model_name: str = 'xgboost'):
         """
         Internal method to generate SHAP explanations
 
@@ -80,13 +92,14 @@ class ShapService:
             model: The pipeline model
             input_data: Raw input DataFrame
             request_id: UUID for this request
+            model_name: Name of the model (xgboost, lightgbm, adaboost)
         """
         try:
             # Update progress
             self._update_cache(request_id, {'status': 'processing', 'progress': 10})
 
-            # Get the actual XGBoost model (unwrap from pipeline)
-            xgb_model = model.named_steps['model']
+            # Get the actual model (unwrap from pipeline)
+            ml_model = model.named_steps['model']
 
             # Transform input data through preprocessing steps
             X_processed = model.named_steps['preprocessing'].transform(input_data)
@@ -98,10 +111,24 @@ class ShapService:
             feature_names = self._get_feature_names(model)
             X_processed_df = pd.DataFrame(X_processed, columns=feature_names)
 
-            # Create SHAP explainer (TreeExplainer for XGBoost)
-            print(f"Creating SHAP explainer for request {request_id}...")
-            explainer = shap.TreeExplainer(xgb_model)
-            shap_values = explainer.shap_values(X_processed_df)
+            # Create appropriate SHAP explainer based on model type
+            print(f"Creating SHAP explainer for {model_name} (request {request_id})...")
+
+            if model_name.lower() in self.TREE_BASED_MODELS:
+                # Use TreeExplainer for tree-based models (faster)
+                explainer = shap.TreeExplainer(ml_model)
+                shap_values = explainer.shap_values(X_processed_df)
+            else:
+                # Use KernelExplainer for non-tree models (AdaBoost)
+                # KernelExplainer requires a background dataset
+                print(f"Using KernelExplainer for {model_name} (this may take longer)...")
+
+                # Create synthetic background data for proper SHAP computation
+                # When we only have 1 sample, we need to create variations to establish a baseline
+                background = self._create_background_data(X_processed_df, feature_names)
+
+                explainer = shap.KernelExplainer(ml_model.predict, background)
+                shap_values = explainer.shap_values(X_processed_df, nsamples=100)
 
             self._update_cache(request_id, {'status': 'processing', 'progress': 60})
 
@@ -141,19 +168,27 @@ class ShapService:
             # Sort by absolute SHAP value (most impactful first)
             shap_values_for_instance.sort(key=lambda x: abs(x['shap_value']), reverse=True)
 
+            # Handle expected_value (may be array for some explainers)
+            expected_value = explainer.expected_value
+            if hasattr(expected_value, '__len__') and not isinstance(expected_value, str):
+                expected_value = float(expected_value[0]) if len(expected_value) > 0 else float(expected_value)
+            else:
+                expected_value = float(expected_value)
+
             # Update cache with results
             result = {
                 'status': 'completed',
                 'progress': 100,
+                'model_name': model_name,
                 'bar_chart': bar_chart,
                 'waterfall': waterfall,
                 'feature_importance': feature_importance[:10],  # Top 10
-                'base_value': float(explainer.expected_value),
+                'base_value': expected_value,
                 'shap_values': shap_values_for_instance  # Individual SHAP values for this prediction
             }
 
             self._update_cache(request_id, result)
-            print(f"SHAP generation completed for request {request_id}")
+            print(f"SHAP generation completed for {model_name} (request {request_id})")
 
         except Exception as e:
             error_msg = str(e)
@@ -162,6 +197,62 @@ class ShapService:
                 'status': 'error',
                 'error': error_msg
             })
+
+    def _create_background_data(self, X_processed_df: pd.DataFrame, feature_names: list, n_samples: int = 50) -> pd.DataFrame:
+        """
+        Create synthetic background data for KernelExplainer
+
+        KernelExplainer requires a diverse background dataset to compute
+        meaningful SHAP values. When we only have a single prediction,
+        we need to create synthetic variations around the input data.
+
+        Args:
+            X_processed_df: The processed input data (single row)
+            feature_names: List of feature names
+            n_samples: Number of background samples to generate
+
+        Returns:
+            pd.DataFrame: Background dataset for SHAP computation
+        """
+        # Get the single input row
+        input_row = X_processed_df.iloc[0].values
+
+        # Create background by generating variations
+        background_data = []
+
+        # Identify numerical vs binary/categorical features
+        numerical_features = ['Engine (cc)', 'Mileage_log']
+        binary_features = ['Gear', 'Leasing', 'Condition', 'AIR CONDITION',
+                          'POWER STEERING', 'POWER MIRROR', 'POWER WINDOW']
+
+        for i in range(n_samples):
+            new_row = input_row.copy()
+            for j, fname in enumerate(feature_names):
+                if fname in numerical_features:
+                    # Add random noise to numerical features (scaled data, so use small noise)
+                    # Use larger variation for better SHAP computation
+                    noise = np.random.normal(0, 0.5)
+                    new_row[j] = input_row[j] + noise
+                elif fname in binary_features:
+                    # Randomly flip binary features with some probability
+                    if np.random.random() < 0.3:
+                        new_row[j] = 1 - input_row[j] if input_row[j] in [0, 1] else input_row[j]
+                elif fname.startswith('Brand_Grouped_') or fname.startswith('Fuel_Grouped_'):
+                    # For one-hot encoded features, randomly set different categories
+                    if np.random.random() < 0.2:
+                        new_row[j] = 1 - new_row[j] if new_row[j] in [0, 1] else new_row[j]
+            background_data.append(new_row)
+
+        # Also add some samples with mean/zero values for better baseline
+        zero_row = np.zeros_like(input_row)
+        mean_row = input_row * 0.5
+        background_data.extend([zero_row, mean_row])
+
+        # Add the original input as well for reference
+        background_data.append(input_row)
+
+        background_df = pd.DataFrame(background_data, columns=feature_names)
+        return background_df
 
     def _get_feature_names(self, model) -> list:
         """
