@@ -214,7 +214,7 @@ def predict_single(model_name: str):
 @api_bp.route('/shap/generate', methods=['POST'])
 def generate_shap():
     """
-    Start async SHAP generation for a prediction
+    Start async SHAP generation for a prediction (with caching)
 
     Query Parameters:
         model: Model name (optional, defaults to 'xgboost')
@@ -222,11 +222,21 @@ def generate_shap():
     Request Body:
         Same as /predict endpoint
 
-    Response:
+    Response (cache hit - immediate):
+        {
+            "success": true,
+            "request_id": "uuid-string",
+            "status": "completed",
+            "from_cache": true,
+            "message": "SHAP results retrieved from cache. Results are ready immediately."
+        }
+
+    Response (cache miss - async):
         {
             "success": true,
             "request_id": "uuid-string",
             "status": "processing",
+            "from_cache": false,
             "message": "SHAP generation started. Poll /shap/status/{request_id} for results."
         }
     """
@@ -248,20 +258,33 @@ def generate_shap():
         # Convert to DataFrame
         input_df = pd.DataFrame([data])
 
-        # Start async SHAP generation with model name
-        request_id = shap_service.generate_shap_async(
+        # Start async SHAP generation with model name (returns tuple with cache status)
+        request_id, is_cached = shap_service.generate_shap_async(
             model_obj.model,
             input_df,
             model_name=model_name
         )
 
-        return jsonify({
-            'success': True,
-            'request_id': request_id,
-            'model_name': model_name,
-            'status': 'processing',
-            'message': f'SHAP generation started for {model_name}. Poll /api/shap/status/{request_id} for results.'
-        })
+        if is_cached:
+            # Cache hit - results are ready immediately
+            return jsonify({
+                'success': True,
+                'request_id': request_id,
+                'model_name': model_name,
+                'status': 'completed',
+                'from_cache': True,
+                'message': f'SHAP results for {model_name} retrieved from cache. Results are ready immediately at /api/shap/status/{request_id}'
+            })
+        else:
+            # Cache miss - async processing started
+            return jsonify({
+                'success': True,
+                'request_id': request_id,
+                'model_name': model_name,
+                'status': 'processing',
+                'from_cache': False,
+                'message': f'SHAP generation started for {model_name}. Poll /api/shap/status/{request_id} for results.'
+            })
 
     except Exception as e:
         return jsonify({'success': False, 'error': f'SHAP generation failed: {str(e)}'}), 500
@@ -324,7 +347,7 @@ def get_shap_status(request_id: str):
 @api_bp.route('/shap/cleanup/<request_id>', methods=['DELETE'])
 def cleanup_shap(request_id: str):
     """
-    Clean up SHAP results from cache
+    Clean up SHAP results from request cache
 
     Path Parameters:
         request_id: UUID to clean up
@@ -332,14 +355,85 @@ def cleanup_shap(request_id: str):
     Response:
         {
             "success": true,
-            "message": "Cache cleaned up"
+            "message": "Request cache cleaned up"
         }
     """
     try:
-        shap_service.cleanup_cache(request_id)
+        shap_service.cleanup_request_cache(request_id)
         return jsonify({
             'success': True,
-            'message': 'Cache cleaned up'
+            'message': 'Request cache cleaned up'
+        })
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@api_bp.route('/shap/cache/stats', methods=['GET'])
+def get_cache_stats():
+    """
+    Get SHAP cache statistics
+
+    Response:
+        {
+            "success": true,
+            "stats": {
+                "request_cache_size": 5,
+                "results_cache_size": 10,
+                "results_cache_expired": 2,
+                "cache_ttl_seconds": 3600,
+                "max_cache_size": 100
+            }
+        }
+    """
+    try:
+        stats = shap_service.get_cache_stats()
+        return jsonify({
+            'success': True,
+            'stats': stats
+        })
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@api_bp.route('/shap/cache/clear', methods=['DELETE'])
+def clear_cache():
+    """
+    Clear all SHAP results cache
+
+    Response:
+        {
+            "success": true,
+            "message": "Results cache cleared"
+        }
+    """
+    try:
+        shap_service.clear_results_cache()
+        return jsonify({
+            'success': True,
+            'message': 'Results cache cleared'
+        })
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@api_bp.route('/shap/cache/cleanup-expired', methods=['POST'])
+def cleanup_expired():
+    """
+    Clean up expired SHAP results from cache
+
+    Response:
+        {
+            "success": true,
+            "removed_count": 5,
+            "message": "Expired cache entries removed"
+        }
+    """
+    try:
+        removed_count = shap_service.cleanup_expired_results()
+        return jsonify({
+            'success': True,
+            'removed_count': removed_count,
+            'message': f'Removed {removed_count} expired cache entries'
         })
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500

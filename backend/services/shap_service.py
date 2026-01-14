@@ -1,5 +1,5 @@
 """
-SHAP Service for generating model explanations asynchronously
+SHAP Service for generating model explanations asynchronously with caching
 """
 import shap
 import numpy as np
@@ -9,15 +9,17 @@ matplotlib.use('Agg')  # Non-interactive backend for server use
 import matplotlib.pyplot as plt
 import io
 import base64
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, Tuple
 import uuid
 from concurrent.futures import ThreadPoolExecutor
 import threading
+import hashlib
+import time
 
 
 class ShapService:
     """
-    Service for generating SHAP explanations asynchronously
+    Service for generating SHAP explanations asynchronously with caching
 
     SHAP (SHapley Additive exPlanations) provides:
         - Feature importance (which features matter most)
@@ -27,6 +29,11 @@ class ShapService:
 
     This service runs SHAP generation in background threads to avoid
     blocking the API, since SHAP computation can take several seconds.
+
+    Features:
+        - Async SHAP computation with progress tracking
+        - Results caching with TTL to avoid recomputation
+        - Support for multiple model types (TreeExplainer, KernelExplainer)
 
     Supports multiple model types:
         - TreeExplainer: For tree-based models (XGBoost, LightGBM)
@@ -38,24 +45,100 @@ class ShapService:
     # Models that require KernelExplainer (slower, model-agnostic)
     KERNEL_BASED_MODELS = ['adaboost']
 
-    def __init__(self, max_workers: int = 2):
+    # Cache configuration
+    DEFAULT_CACHE_TTL = 3600  # 1 hour in seconds
+    MAX_CACHE_SIZE = 100  # Maximum number of cached results
+
+    def __init__(self, max_workers: int = 2, cache_ttl: int = None, max_cache_size: int = None):
         """
-        Initialize SHAP service
+        Initialize SHAP service with caching
 
         Args:
             max_workers: Maximum number of concurrent SHAP generation threads
+            cache_ttl: Time-to-live for cached results in seconds (default: 1 hour)
+            max_cache_size: Maximum number of results to cache (default: 100)
         """
         self.executor = ThreadPoolExecutor(max_workers=max_workers)
-        self._cache: Dict[str, Dict[str, Any]] = {}
+        self._request_cache: Dict[str, Dict[str, Any]] = {}  # In-progress request tracking
+        self._results_cache: Dict[str, Tuple[Dict[str, Any], float]] = {}  # (result, timestamp)
         self._lock = threading.Lock()
+        self._results_lock = threading.Lock()
+        self.cache_ttl = cache_ttl or self.DEFAULT_CACHE_TTL
+        self.max_cache_size = max_cache_size or self.MAX_CACHE_SIZE
+
+    def _generate_cache_key(self, input_data: pd.DataFrame, model_name: str) -> str:
+        """
+        Generate a unique cache key from input data and model name
+
+        Args:
+            input_data: Raw input DataFrame
+            model_name: Name of the model
+
+        Returns:
+            str: Hash-based cache key
+        """
+        # Convert input data to a consistent string representation
+        data_str = input_data.to_json(orient='records')
+        key_str = f"{model_name}:{data_str}"
+
+        # Generate MD5 hash for consistent key length
+        return hashlib.md5(key_str.encode()).hexdigest()
+
+    def _get_cached_result(self, cache_key: str) -> Optional[Dict[str, Any]]:
+        """
+        Get cached SHAP result if available and not expired
+
+        Args:
+            cache_key: The cache key to look up
+
+        Returns:
+            Cached result dict if valid, None if not found or expired
+        """
+        with self._results_lock:
+            if cache_key in self._results_cache:
+                result, timestamp = self._results_cache[cache_key]
+                # Check if cache entry is still valid
+                if time.time() - timestamp < self.cache_ttl:
+                    print(f"[CACHE HIT] Returning cached SHAP result for key {cache_key[:8]}...")
+                    return result
+                else:
+                    # Expired, remove from cache
+                    print(f"[CACHE EXPIRED] Removing expired entry for key {cache_key[:8]}...")
+                    del self._results_cache[cache_key]
+            return None
+
+    def _store_cached_result(self, cache_key: str, result: Dict[str, Any]):
+        """
+        Store SHAP result in cache with timestamp
+
+        Args:
+            cache_key: The cache key
+            result: The SHAP result to cache
+        """
+        with self._results_lock:
+            # Enforce max cache size (LRU-style: remove oldest entries)
+            if len(self._results_cache) >= self.max_cache_size:
+                # Remove oldest entries (first 10% of max size)
+                entries_to_remove = max(1, self.max_cache_size // 10)
+                sorted_keys = sorted(
+                    self._results_cache.keys(),
+                    key=lambda k: self._results_cache[k][1]  # Sort by timestamp
+                )
+                for key in sorted_keys[:entries_to_remove]:
+                    del self._results_cache[key]
+                print(f"[CACHE CLEANUP] Removed {entries_to_remove} oldest entries")
+
+            # Store new result with timestamp
+            self._results_cache[cache_key] = (result, time.time())
+            print(f"[CACHE STORE] Stored result for key {cache_key[:8]}... (cache size: {len(self._results_cache)})")
 
     def generate_shap_async(self,
                            model,
                            input_data: pd.DataFrame,
                            request_id: Optional[str] = None,
-                           model_name: str = 'xgboost') -> str:
+                           model_name: str = 'xgboost') -> Tuple[str, bool]:
         """
-        Start async SHAP generation
+        Start async SHAP generation with caching
 
         Args:
             model: The pipeline model (includes preprocessing)
@@ -64,25 +147,46 @@ class ShapService:
             model_name: Name of the model (xgboost, lightgbm, adaboost)
 
         Returns:
-            request_id: UUID for tracking the SHAP generation
+            Tuple[str, bool]: (request_id, is_cached)
+                - request_id: UUID for tracking the SHAP generation
+                - is_cached: True if result was returned from cache (ready immediately)
         """
+        # Generate cache key from input data and model
+        cache_key = self._generate_cache_key(input_data, model_name)
+
+        # Check for cached result
+        cached_result = self._get_cached_result(cache_key)
+        if cached_result is not None:
+            # Return cached result immediately
+            if request_id is None:
+                request_id = str(uuid.uuid4())
+
+            # Store cached result in request cache for retrieval
+            with self._lock:
+                self._request_cache[request_id] = cached_result.copy()
+                self._request_cache[request_id]['from_cache'] = True
+
+            return request_id, True
+
+        # No cache hit - generate new SHAP values
         if request_id is None:
             request_id = str(uuid.uuid4())
 
-        # Initialize cache entry
+        # Initialize request cache entry
         with self._lock:
-            self._cache[request_id] = {
+            self._request_cache[request_id] = {
                 'status': 'processing',
                 'progress': 0,
-                'model_name': model_name
+                'model_name': model_name,
+                'cache_key': cache_key  # Store cache key for later storage
             }
 
         # Submit to thread pool
-        self.executor.submit(self._generate_shap, model, input_data, request_id, model_name)
+        self.executor.submit(self._generate_shap, model, input_data, request_id, model_name, cache_key)
 
-        return request_id
+        return request_id, False
 
-    def _generate_shap(self, model, input_data: pd.DataFrame, request_id: str, model_name: str = 'xgboost'):
+    def _generate_shap(self, model, input_data: pd.DataFrame, request_id: str, model_name: str = 'xgboost', cache_key: str = None):
         """
         Internal method to generate SHAP explanations
 
@@ -93,10 +197,11 @@ class ShapService:
             input_data: Raw input DataFrame
             request_id: UUID for this request
             model_name: Name of the model (xgboost, lightgbm, adaboost)
+            cache_key: Cache key for storing result (optional)
         """
         try:
             # Update progress
-            self._update_cache(request_id, {'status': 'processing', 'progress': 10})
+            self._update_request_cache(request_id, {'status': 'processing', 'progress': 10})
 
             # Get the actual model (unwrap from pipeline)
             ml_model = model.named_steps['model']
@@ -105,7 +210,7 @@ class ShapService:
             X_processed = model.named_steps['preprocessing'].transform(input_data)
             X_processed = model.named_steps['column_transform'].transform(X_processed)
 
-            self._update_cache(request_id, {'status': 'processing', 'progress': 30})
+            self._update_request_cache(request_id, {'status': 'processing', 'progress': 30})
 
             # Get feature names
             feature_names = self._get_feature_names(model)
@@ -130,7 +235,7 @@ class ShapService:
                 explainer = shap.KernelExplainer(ml_model.predict, background)
                 shap_values = explainer.shap_values(X_processed_df, nsamples=100)
 
-            self._update_cache(request_id, {'status': 'processing', 'progress': 60})
+            self._update_request_cache(request_id, {'status': 'processing', 'progress': 60})
 
             # Generate visualizations
             print(f"Generating SHAP visualizations for request {request_id}...")
@@ -142,7 +247,7 @@ class ShapService:
                 feature_names
             )
 
-            self._update_cache(request_id, {'status': 'processing', 'progress': 90})
+            self._update_request_cache(request_id, {'status': 'processing', 'progress': 90})
 
             # Compute feature importance
             mean_abs_shap = np.abs(shap_values).mean(axis=0)
@@ -175,7 +280,7 @@ class ShapService:
             else:
                 expected_value = float(expected_value)
 
-            # Update cache with results
+            # Update request cache with results
             result = {
                 'status': 'completed',
                 'progress': 100,
@@ -187,13 +292,18 @@ class ShapService:
                 'shap_values': shap_values_for_instance  # Individual SHAP values for this prediction
             }
 
-            self._update_cache(request_id, result)
+            self._update_request_cache(request_id, result)
+
+            # Store in results cache for future lookups
+            if cache_key:
+                self._store_cached_result(cache_key, result)
+
             print(f"SHAP generation completed for {model_name} (request {request_id})")
 
         except Exception as e:
             error_msg = str(e)
             print(f"Error generating SHAP for request {request_id}: {error_msg}")
-            self._update_cache(request_id, {
+            self._update_request_cache(request_id, {
                 'status': 'error',
                 'error': error_msg
             })
@@ -359,25 +469,25 @@ class ShapService:
             Dict with status and results (if completed), None if not found
         """
         with self._lock:
-            return self._cache.get(request_id)
+            return self._request_cache.get(request_id)
 
-    def _update_cache(self, request_id: str, data: Dict[str, Any]):
+    def _update_request_cache(self, request_id: str, data: Dict[str, Any]):
         """
-        Update cache with thread safety
+        Update request cache with thread safety
 
         Args:
             request_id: UUID of the request
             data: Data to update
         """
         with self._lock:
-            if request_id in self._cache:
-                self._cache[request_id].update(data)
+            if request_id in self._request_cache:
+                self._request_cache[request_id].update(data)
             else:
-                self._cache[request_id] = data
+                self._request_cache[request_id] = data
 
-    def cleanup_cache(self, request_id: str):
+    def cleanup_request_cache(self, request_id: str):
         """
-        Remove completed SHAP from cache
+        Remove completed SHAP from request cache
 
         Call this after the client has retrieved the results
         to free up memory
@@ -386,30 +496,88 @@ class ShapService:
             request_id: UUID of the request to clean up
         """
         with self._lock:
-            if request_id in self._cache:
-                del self._cache[request_id]
+            if request_id in self._request_cache:
+                del self._request_cache[request_id]
 
-    def get_cache_size(self) -> int:
+    def get_request_cache_size(self) -> int:
+        """
+        Get number of in-progress/completed requests in cache
+
+        Returns:
+            int: Number of items in request cache
+        """
+        with self._lock:
+            return len(self._request_cache)
+
+    def get_results_cache_size(self) -> int:
         """
         Get number of cached SHAP results
 
         Returns:
-            int: Number of items in cache
+            int: Number of items in results cache
+        """
+        with self._results_lock:
+            return len(self._results_cache)
+
+    def get_cache_stats(self) -> Dict[str, Any]:
+        """
+        Get statistics about the caches
+
+        Returns:
+            Dict with cache statistics
         """
         with self._lock:
-            return len(self._cache)
+            request_cache_size = len(self._request_cache)
 
-    def cleanup_old_cache(self, max_age_seconds: int = 3600):
+        with self._results_lock:
+            results_cache_size = len(self._results_cache)
+            # Count expired entries
+            current_time = time.time()
+            expired_count = sum(
+                1 for _, (_, timestamp) in self._results_cache.items()
+                if current_time - timestamp >= self.cache_ttl
+            )
+
+        return {
+            'request_cache_size': request_cache_size,
+            'results_cache_size': results_cache_size,
+            'results_cache_expired': expired_count,
+            'cache_ttl_seconds': self.cache_ttl,
+            'max_cache_size': self.max_cache_size
+        }
+
+    def cleanup_expired_results(self) -> int:
         """
-        Clean up cache entries older than max_age_seconds
+        Clean up expired entries from results cache
 
-        For future implementation with timestamps
-
-        Args:
-            max_age_seconds: Maximum age before cleanup (default: 1 hour)
+        Returns:
+            int: Number of entries removed
         """
-        # TODO: Implement timestamp tracking and cleanup
-        pass
+        removed_count = 0
+        current_time = time.time()
+
+        with self._results_lock:
+            keys_to_remove = [
+                key for key, (_, timestamp) in self._results_cache.items()
+                if current_time - timestamp >= self.cache_ttl
+            ]
+            for key in keys_to_remove:
+                del self._results_cache[key]
+                removed_count += 1
+
+        if removed_count > 0:
+            print(f"[CACHE CLEANUP] Removed {removed_count} expired entries from results cache")
+
+        return removed_count
+
+    def clear_results_cache(self):
+        """
+        Clear all entries from the results cache
+        """
+        with self._results_lock:
+            count = len(self._results_cache)
+            self._results_cache.clear()
+            print(f"[CACHE CLEAR] Cleared {count} entries from results cache")
 
     def shutdown(self):
         """Shutdown the thread pool executor"""
