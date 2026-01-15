@@ -131,7 +131,6 @@ tmpclaude-*/
 
 # Assignment files (not for repository)
 ML_Assignment_GuidelinesMSc in AI.pdf
-ml_assignment_modeling_xgbr.py
 
 # Python bytecode
 *.pyc
