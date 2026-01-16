@@ -21,7 +21,7 @@ llvmlite==0.46.0
 MarkupSafe==3.0.3
 matplotlib==3.10.8
 matplotlib-inline==0.2.1
-numba==0.63.1
+numba
 numpy==2.3.5
 packaging==25.0
 pandas==2.3.3
@@ -35,7 +35,7 @@ python-dateutil==2.9.0.post0
 pytz==2025.2
 scikit-learn==1.8.0
 scipy==1.16.3
-shap==0.50.0
+shap
 six==1.17.0
 slicer==0.0.8
 stack-data==0.6.3

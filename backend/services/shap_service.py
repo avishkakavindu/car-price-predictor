@@ -9,10 +9,12 @@ matplotlib.use('Agg')  # Non-interactive backend for server use
 import matplotlib.pyplot as plt
 import io
 import base64
+import json
 from typing import Dict, Any, Optional
 import uuid
 from concurrent.futures import ThreadPoolExecutor
 import threading
+import traceback
 
 
 class ShapService:
@@ -39,6 +41,75 @@ class ShapService:
         self.executor = ThreadPoolExecutor(max_workers=max_workers)
         self._cache: Dict[str, Dict[str, Any]] = {}
         self._lock = threading.Lock()
+
+    def _safe_float(self, value: Any, default: float = 0.0) -> float:
+        """Convert value to float, handling strings and arrays."""
+        if isinstance(value, (list, tuple, np.ndarray)):
+            value = value[0] if len(value) > 0 else default
+
+        if isinstance(value, str):
+            value = value.strip('[]')
+
+        try:
+            return float(value)
+        except (ValueError, TypeError):
+            print(f"[SHAP DEBUG] _safe_float fallback for value={value} (type={type(value)})")
+            return default
+
+    def _sanitize_xgb_model(self, model):
+        """Ensure booster attributes (like base_score) are valid floats."""
+        try:
+            booster = model.get_booster()
+            config = json.loads(booster.save_config())
+            learner_params = config.get('learner', {}).get('learner_model_param', {})
+            base_score = learner_params.get('base_score')
+            if base_score is not None:
+                clean_score = base_score.strip('[]')
+                try:
+                    clean_float = float(clean_score)
+                    learner_params['base_score'] = str(clean_float)
+                    booster.load_config(json.dumps(config))
+                    print(f"[SHAP DEBUG] Sanitized base_score from {base_score} to {clean_float}")
+                except ValueError:
+                    learner_params['base_score'] = '0.0'
+                    booster.load_config(json.dumps(config))
+                    print(f"[SHAP DEBUG] Invalid base_score '{base_score}', forced to 0.0")
+        except Exception as exc:
+            print(f"[SHAP DEBUG] Failed to sanitize XGBoost model attributes: {exc}")
+        return model
+
+    def _debug_value(self, label: str, value: Any, sample_size: int = 3):
+        """Print debug info about intermediate values."""
+        try:
+            info = {
+                'type': type(value).__name__
+            }
+
+            if isinstance(value, np.ndarray):
+                info['shape'] = value.shape
+                info['dtype'] = str(value.dtype)
+                info['sample'] = value.flatten()[:sample_size].tolist()
+            elif isinstance(value, pd.DataFrame):
+                info['shape'] = value.shape
+                info['dtypes'] = {c: str(dt) for c, dt in value.dtypes.items()}
+                info['sample'] = value.head(sample_size).to_dict(orient='records')
+            elif isinstance(value, pd.Series):
+                info['shape'] = value.shape
+                info['dtype'] = str(value.dtype)
+                info['sample'] = value.head(sample_size).tolist()
+            elif isinstance(value, list):
+                info['length'] = len(value)
+                info['sample'] = value[:sample_size]
+            elif isinstance(value, dict):
+                keys = list(value.keys())[:sample_size]
+                info['keys'] = keys
+                info['sample'] = {k: value[k] for k in keys}
+            else:
+                info['value'] = value
+
+            print(f"[SHAP DEBUG] {label}: {info}")
+        except Exception as debug_exc:
+            print(f"[SHAP DEBUG] Failed to log {label}: {debug_exc}")
 
     def generate_shap_async(self,
                            model,
@@ -90,27 +161,51 @@ class ShapService:
 
             # Transform input data through preprocessing steps
             X_processed = model.named_steps['preprocessing'].transform(input_data)
+            self._debug_value('After preprocessing.transform', X_processed)
             X_processed = model.named_steps['column_transform'].transform(X_processed)
+            self._debug_value('After column_transform.transform', X_processed)
 
             self._update_cache(request_id, {'status': 'processing', 'progress': 30})
 
             # Get feature names
             feature_names = self._get_feature_names(model)
             X_processed_df = pd.DataFrame(X_processed, columns=feature_names)
+            self._debug_value('X_processed_df (raw)', X_processed_df)
+            
+            # Ensure all columns are numeric (handle any string representations)
+            for col in X_processed_df.columns:
+                try:
+                    # Try to convert string representations to float
+                    X_processed_df[col] = X_processed_df[col].astype(str).str.strip('[]').astype(float)
+                except (ValueError, TypeError):
+                    # If conversion fails, try to convert directly
+                    try:
+                        X_processed_df[col] = pd.to_numeric(X_processed_df[col], errors='coerce')
+                    except Exception:
+                        pass  # Keep original values if all conversions fail
+            self._debug_value('X_processed_df (numeric enforced)', X_processed_df)
+
+            # Convert to numpy array for SHAP computations
+            X_shap_array = X_processed_df.to_numpy(dtype=np.float64, copy=True)
+            self._debug_value('X_shap_array', X_shap_array)
 
             # Create SHAP explainer (TreeExplainer for XGBoost)
             print(f"Creating SHAP explainer for request {request_id}...")
-            explainer = shap.TreeExplainer(xgb_model)
-            shap_values = explainer.shap_values(X_processed_df)
+            sanitized_model = self._sanitize_xgb_model(xgb_model)
+            explainer = shap.TreeExplainer(sanitized_model)
+            shap_values = explainer.shap_values(X_shap_array)
+            self._debug_value('shap_values', shap_values)
+            self._debug_value('explainer.expected_value', explainer.expected_value)
 
             self._update_cache(request_id, {'status': 'processing', 'progress': 60})
 
             # Generate visualizations
             print(f"Generating SHAP visualizations for request {request_id}...")
             bar_chart = self._generate_bar_chart(shap_values, X_processed_df, feature_names)
+            base_value = self._safe_float(explainer.expected_value)
             waterfall = self._generate_waterfall(
                 shap_values[0],
-                explainer.expected_value,
+                base_value,
                 X_processed_df.iloc[0],
                 feature_names
             )
@@ -119,27 +214,32 @@ class ShapService:
 
             # Compute feature importance
             mean_abs_shap = np.abs(shap_values).mean(axis=0)
-            feature_importance = [
-                {
+            self._debug_value('mean_abs_shap', mean_abs_shap)
+            feature_importance = []
+            for i in range(len(feature_names)):
+                importance_val = self._safe_float(mean_abs_shap[i])
+                feature_importance.append({
                     'feature': feature_names[i],
-                    'importance': float(mean_abs_shap[i])
-                }
-                for i in range(len(feature_names))
-            ]
+                    'importance': importance_val
+                })
             # Sort by importance (descending)
             feature_importance.sort(key=lambda x: x['importance'], reverse=True)
+            self._debug_value('feature_importance (sorted)', feature_importance)
 
             # Get individual SHAP values for this specific prediction
-            shap_values_for_instance = [
-                {
+            shap_values_for_instance = []
+            for i in range(len(feature_names)):
+                shap_val = self._safe_float(shap_values[0][i])
+                feature_val = self._safe_float(X_processed_df.iloc[0, i])
+
+                shap_values_for_instance.append({
                     'feature': feature_names[i],
-                    'shap_value': float(shap_values[0][i]),
-                    'feature_value': float(X_processed_df.iloc[0, i])
-                }
-                for i in range(len(feature_names))
-            ]
+                    'shap_value': shap_val,
+                    'feature_value': feature_val
+                })
             # Sort by absolute SHAP value (most impactful first)
             shap_values_for_instance.sort(key=lambda x: abs(x['shap_value']), reverse=True)
+            self._debug_value('shap_values_for_instance (sorted)', shap_values_for_instance)
 
             # Update cache with results
             result = {
@@ -148,9 +248,10 @@ class ShapService:
                 'bar_chart': bar_chart,
                 'waterfall': waterfall,
                 'feature_importance': feature_importance[:10],  # Top 10
-                'base_value': float(explainer.expected_value),
+                'base_value': base_value,
                 'shap_values': shap_values_for_instance  # Individual SHAP values for this prediction
             }
+            self._debug_value('Final SHAP result payload', result)
 
             self._update_cache(request_id, result)
             print(f"SHAP generation completed for request {request_id}")
@@ -158,6 +259,7 @@ class ShapService:
         except Exception as e:
             error_msg = str(e)
             print(f"Error generating SHAP for request {request_id}: {error_msg}")
+            traceback.print_exc()
             self._update_cache(request_id, {
                 'status': 'error',
                 'error': error_msg
