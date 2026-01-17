@@ -29,7 +29,7 @@ const ShapExplanation: React.FC<ShapExplanationProps> = ({
     const names: { [key: string]: string } = {
       'xgboost': 'XGBoost',
       'lightgbm': 'LightGBM',
-      'adaboost': 'AdaBoost'
+      'catboost': 'CatBoost'
     };
     return names[model.toLowerCase()] || model.toUpperCase();
   };

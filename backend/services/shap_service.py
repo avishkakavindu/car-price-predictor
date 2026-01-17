@@ -37,13 +37,13 @@ class ShapService:
 
     Supports multiple model types:
         - TreeExplainer: For tree-based models (XGBoost, LightGBM)
-        - KernelExplainer: For model-agnostic explanations (AdaBoost)
+        - KernelExplainer: For model-agnostic explanations (CatBoost)
     """
 
     # Models that use TreeExplainer (fast, tree-based)
     TREE_BASED_MODELS = ['xgboost', 'lightgbm']
     # Models that require KernelExplainer (slower, model-agnostic)
-    KERNEL_BASED_MODELS = ['adaboost']
+    KERNEL_BASED_MODELS = ['catboost']
 
     # Cache configuration
     DEFAULT_CACHE_TTL = 3600  # 1 hour in seconds
@@ -144,7 +144,7 @@ class ShapService:
             model: The pipeline model (includes preprocessing)
             input_data: Raw input DataFrame (14 features)
             request_id: Optional UUID for tracking (generated if not provided)
-            model_name: Name of the model (xgboost, lightgbm, adaboost)
+            model_name: Name of the model (xgboost, lightgbm, catboost)
 
         Returns:
             Tuple[str, bool]: (request_id, is_cached)
@@ -196,7 +196,7 @@ class ShapService:
             model: The pipeline model
             input_data: Raw input DataFrame
             request_id: UUID for this request
-            model_name: Name of the model (xgboost, lightgbm, adaboost)
+            model_name: Name of the model (xgboost, lightgbm, catboost)
             cache_key: Cache key for storing result (optional)
         """
         try:
@@ -224,7 +224,7 @@ class ShapService:
                 explainer = shap.TreeExplainer(ml_model)
                 shap_values = explainer.shap_values(X_processed_df)
             else:
-                # Use KernelExplainer for non-tree models (AdaBoost)
+                # Use KernelExplainer for non-tree models (CatBoost)
                 # KernelExplainer requires a background dataset
                 print(f"Using KernelExplainer for {model_name} (this may take longer)...")
 

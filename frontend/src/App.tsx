@@ -49,7 +49,7 @@ const App: React.FC = () => {
       } catch (err) {
         console.error('Failed to fetch models:', err);
         // Set default models as fallback
-        setAvailableModels(['xgboost', 'lightgbm', 'adaboost']);
+        setAvailableModels(['xgboost', 'lightgbm', 'catboost']);
       }
     };
     fetchModels();
@@ -118,7 +118,7 @@ const App: React.FC = () => {
 
   // Poll for SHAP status
   const pollShapStatus = async (requestId: string) => {
-    const maxAttempts = 60; // 60 attempts * 2 seconds = 120 seconds max (AdaBoost takes longer)
+    const maxAttempts = 60; // 60 attempts * 2 seconds = 120 seconds max (CatBoost may take longer)
     let attempts = 0;
 
     const poll = setInterval(async () => {
@@ -217,8 +217,8 @@ const App: React.FC = () => {
                     {selectedShapModel.toUpperCase()}...
                   </p>
                   <p className='shap-loading-hint'>
-                    {selectedShapModel === 'adaboost'
-                      ? 'AdaBoost uses KernelExplainer which may take longer...'
+                    {selectedShapModel === 'catboost'
+                      ? 'CatBoost uses KernelExplainer which may take longer...'
                       : 'This may take a few seconds...'}
                   </p>
                 </div>
@@ -230,7 +230,7 @@ const App: React.FC = () => {
 
       <footer className='app-footer'>
         <p>
-          Powered by XGBoost, LightGBM, AdaBoost, SHAP &amp; React | MSc in AI -
+          Powered by XGBoost, LightGBM, CatBoost, SHAP &amp; React | MSc in AI -
           Machine Learning Assignment
         </p>
       </footer>

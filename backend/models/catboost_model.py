@@ -1,5 +1,5 @@
 """
-AdaBoost model implementation following Strategy Pattern
+CatBoost model implementation following Strategy Pattern
 """
 
 import joblib
@@ -22,28 +22,30 @@ sys.modules["__main__"].group_brands = preprocessing.group_brands
 sys.modules["__main__"].group_fuel = preprocessing.group_fuel
 sys.modules["__main__"].encode_binary_features = preprocessing.encode_binary_features
 sys.modules["__main__"].select_features = preprocessing.select_features
+# Make CatBoostRegressorWrapper available for unpickling
+sys.modules["__main__"].CatBoostRegressorWrapper = preprocessing.CatBoostRegressorWrapper
 
 
-class AdaBoostModel(BaseModel):
-    """AdaBoost implementation of BaseModel"""
+class CatBoostModel(BaseModel):
+    """CatBoost implementation of BaseModel"""
 
     def __init__(self, model_path: str):
         """
-        Initialize AdaBoost model
+        Initialize CatBoost model
 
         Args:
             model_path: Path to the saved pipeline (.pkl file)
         """
-        super().__init__(model_name="AdaBoost", model_path=model_path)
+        super().__init__(model_name="CatBoost", model_path=model_path)
 
     def load_model(self) -> bool:
         """
-        Load AdaBoost pipeline from pickle file
+        Load CatBoost pipeline from pickle file
 
         The pipeline contains:
             - preprocessing steps (feature engineering)
             - column transformer (scaling, encoding)
-            - AdaBoost model
+            - CatBoost model
 
         Returns:
             bool: True if successful, False otherwise
@@ -64,7 +66,7 @@ class AdaBoostModel(BaseModel):
 
     def predict(self, input_data: pd.DataFrame) -> Dict[str, Any]:
         """
-        Make prediction using AdaBoost model
+        Make prediction using CatBoost model
 
         The pipeline handles all preprocessing:
             1. Creates Car_Age from YOM
@@ -163,7 +165,7 @@ class AdaBoostModel(BaseModel):
         """
         info = {
             "model_name": self.model_name,
-            "algorithm": "AdaBoost Regressor",
+            "algorithm": "CatBoost Regressor",
             "is_loaded": self.is_loaded,
             "model_path": self.model_path,
             "features": 0,
@@ -173,12 +175,13 @@ class AdaBoostModel(BaseModel):
             try:
                 info["features"] = len(self.get_feature_names())
 
-                # Get AdaBoost-specific parameters if available
-                ada_model = self.model.named_steps.get("model")
-                if ada_model:
+                # Get CatBoost-specific parameters if available
+                cat_model = self.model.named_steps.get("model")
+                if cat_model:
                     info["hyperparameters"] = {
-                        "n_estimators": getattr(ada_model, "n_estimators", None),
-                        "learning_rate": getattr(ada_model, "learning_rate", None),
+                        "iterations": getattr(cat_model, "iterations", None),
+                        "learning_rate": getattr(cat_model, "learning_rate", None),
+                        "depth": getattr(cat_model, "depth", None),
                     }
             except Exception as e:
                 print(f"Error getting model info: {e}")

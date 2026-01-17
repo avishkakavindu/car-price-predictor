@@ -12,7 +12,7 @@ A full-stack machine learning web application for predicting car prices in Sri L
 
 ## Features
 
-- **Multiple ML Models**: XGBoost, LightGBM, and AdaBoost with extensible architecture
+- **Multiple ML Models**: XGBoost, LightGBM, and CatBoost with extensible architecture
 - **Ensemble Predictions**: Combines predictions from all models with confidence metrics
 - **SHAP Explanations**:
   - Feature importance bar charts
@@ -28,7 +28,7 @@ A full-stack machine learning web application for predicting car prices in Sri L
 ### Backend
 - Python 3.8+
 - Flask (REST API)
-- XGBoost, LightGBM, AdaBoost (ML models)
+- XGBoost, LightGBM, CatBoost (ML models)
 - SHAP (Model explanations)
 - Pandas, NumPy, scikit-learn
 - Matplotlib (Visualizations)
@@ -111,7 +111,7 @@ pip install -r requirements.txt
 **Important**: The backend requires the trained model files to be placed in `backend/data/models/`:
 - `car_price_predictor_xgbr.pkl` (XGBoost)
 - `car_price_predictor_lgbm.pkl` (LightGBM)
-- `car_price_predictor_adaboost.pkl` (AdaBoost)
+- `car_price_predictor_catboost.pkl` (CatBoost)
 
 ### 3. Frontend Setup
 
@@ -139,10 +139,10 @@ You should see:
 ```
 [OK] Model loaded: XGBoost
 [OK] Model loaded: LightGBM
-[OK] Model loaded: AdaBoost
+[OK] Model loaded: CatBoost
 Flask app running on http://localhost:5000
 Models loaded: 3
-Available models: ['xgboost', 'lightgbm', 'adaboost']
+Available models: ['xgboost', 'lightgbm', 'catboost']
 ```
 
 ### Start Frontend Development Server
@@ -355,7 +355,7 @@ VITE_API_BASE_URL=http://localhost:5000/api
 
 This project fulfills the MSc AI Machine Learning Assignment requirements:
 
-✓ Trained ML models integrated (XGBoost, LightGBM, AdaBoost)
+✓ Trained ML models integrated (XGBoost, LightGBM, CatBoost)
 ✓ User input functionality (14 features)
 ✓ Ensemble prediction display with confidence metrics
 ✓ SHAP explanations (bar chart + waterfall plot)
@@ -364,7 +364,7 @@ This project fulfills the MSc AI Machine Learning Assignment requirements:
 
 ## Credits
 
-- **ML Models**: XGBoost, LightGBM, AdaBoost with preprocessing pipelines
+- **ML Models**: XGBoost, LightGBM, CatBoost with preprocessing pipelines
 - **SHAP**: Model interpretability
 - **Dataset**: Car price dataset from Sri Lanka
 
