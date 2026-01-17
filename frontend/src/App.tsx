@@ -8,12 +8,17 @@ import PredictionForm from './components/PredictionForm/PredictionForm';
 import PredictionResults from './components/PredictionResults/PredictionResults';
 import ShapExplanation from './components/ShapExplanation/ShapExplanation';
 import ErrorMessage from './components/common/ErrorMessage';
-import { getAvailableModels, generateShap, getShapStatus } from './services/predictionService';
+import {
+  getAvailableModels,
+  generateShap,
+  getShapStatus,
+} from './services/predictionService';
 import type { CarData, PredictionResponse, ShapData } from './types';
 import './App.css';
 
 const App: React.FC = () => {
-  const [predictionData, setPredictionData] = useState<PredictionResponse | null>(null);
+  const [predictionData, setPredictionData] =
+    useState<PredictionResponse | null>(null);
   const [shapData, setShapData] = useState<ShapData | null>(null);
   const [inputData, setInputData] = useState<CarData | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -29,10 +34,15 @@ const App: React.FC = () => {
         const response = await getAvailableModels();
         console.log('Models response:', response);
         if (response.success && response.models) {
-          const modelNames = response.models.map(m => m.model_name.toLowerCase());
+          const modelNames = response.models.map((m) =>
+            m.model_name.toLowerCase()
+          );
           console.log('Available models:', modelNames);
           setAvailableModels(modelNames);
-          if (modelNames.length > 0 && !modelNames.includes(selectedShapModel)) {
+          if (
+            modelNames.length > 0 &&
+            !modelNames.includes(selectedShapModel)
+          ) {
             setSelectedShapModel(modelNames[0]);
           }
         }
@@ -57,8 +67,8 @@ const App: React.FC = () => {
     // Fallback: get available models from prediction response if not already set
     if (availableModels.length === 0 && data.predictions) {
       const modelNames = data.predictions
-        .filter(p => p.status === 'success')
-        .map(p => p.model_name.toLowerCase());
+        .filter((p) => p.status === 'success')
+        .map((p) => p.model_name.toLowerCase());
       if (modelNames.length > 0) {
         setAvailableModels(modelNames);
         if (!modelNames.includes(selectedShapModel)) {
@@ -136,18 +146,37 @@ const App: React.FC = () => {
   };
 
   return (
-    <div className="app">
-      <header className="app-header">
-        <div className="header-content">
-          <h1>Car Price Prediction</h1>
-          <p className="subtitle">
-            ML-powered price estimation with explainable AI
-          </p>
+    <div className='app'>
+      <header className='app-header'>
+        <div className='header-content'>
+          <div className='header-left'>
+            <h1>Car Price Prediction</h1>
+            <p className='subtitle'>
+              ML-powered price estimation with explainable AI
+            </p>
+          </div>
+          <div className='header-right'>
+            <h4 className='team-title'>Team Members</h4>
+            <div className='team-list'>
+              <div className='team-member'>
+                <span className='member-name'>Perera A.A.R.D.</span>
+                <span className='member-id'>258812E</span>
+              </div>
+              <div className='team-member'>
+                <span className='member-name'>Perera W.A.N.M.</span>
+                <span className='member-id'>258815P</span>
+              </div>
+              <div className='team-member'>
+                <span className='member-name'>Dambawinna W.R.P.W.M.A.K.B.</span>
+                <span className='member-id'>258765K</span>
+              </div>
+            </div>
+          </div>
         </div>
       </header>
 
-      <main className="app-main">
-        <div className="container">
+      <main className='app-main'>
+        <div className='container'>
           {error && (
             <ErrorMessage message={error} onClose={() => setError(null)} />
           )}
@@ -179,11 +208,15 @@ const App: React.FC = () => {
                 />
               )}
 
-              {(isLoadingShap || (shapData && shapData.status === 'processing')) && (
-                <div className="shap-loading">
-                  <div className="loading-spinner"></div>
-                  <p>Generating SHAP explanations for {selectedShapModel.toUpperCase()}...</p>
-                  <p className="shap-loading-hint">
+              {(isLoadingShap ||
+                (shapData && shapData.status === 'processing')) && (
+                <div className='shap-loading'>
+                  <div className='loading-spinner'></div>
+                  <p>
+                    Generating SHAP explanations for{' '}
+                    {selectedShapModel.toUpperCase()}...
+                  </p>
+                  <p className='shap-loading-hint'>
                     {selectedShapModel === 'adaboost'
                       ? 'AdaBoost uses KernelExplainer which may take longer...'
                       : 'This may take a few seconds...'}
@@ -195,9 +228,10 @@ const App: React.FC = () => {
         </div>
       </main>
 
-      <footer className="app-footer">
+      <footer className='app-footer'>
         <p>
-          Powered by XGBoost, LightGBM, AdaBoost, SHAP &amp; React | MSc in AI - Machine Learning Assignment
+          Powered by XGBoost, LightGBM, AdaBoost, SHAP &amp; React | MSc in AI -
+          Machine Learning Assignment
         </p>
       </footer>
     </div>

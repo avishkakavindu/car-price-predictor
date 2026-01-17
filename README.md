@@ -2,9 +2,17 @@
 
 A full-stack machine learning web application for predicting car prices in Sri Lanka using ensemble models with SHAP explanations.
 
+## Team Members
+
+| Name | Student ID |
+|------|------------|
+| Perera A.A.R.D. | 258812E |
+| Perera W.A.N.M. | 258815P |
+| Dambawinna W.R.P.W.M.A.K.B. | 258765K |
+
 ## Features
 
-- **Multiple ML Models**: Supports XGBoost with extensible architecture for Random Forest and LightGBM
+- **Multiple ML Models**: XGBoost, LightGBM, and AdaBoost with extensible architecture
 - **Ensemble Predictions**: Combines predictions from all models with confidence metrics
 - **SHAP Explanations**:
   - Feature importance bar charts
@@ -20,7 +28,7 @@ A full-stack machine learning web application for predicting car prices in Sri L
 ### Backend
 - Python 3.8+
 - Flask (REST API)
-- XGBoost (ML model)
+- XGBoost, LightGBM, AdaBoost (ML models)
 - SHAP (Model explanations)
 - Pandas, NumPy, scikit-learn
 - Matplotlib (Visualizations)
@@ -100,7 +108,10 @@ source venv/bin/activate
 pip install -r requirements.txt
 ```
 
-**Important**: The backend requires the trained model file `car_price_predictor_xgbr.pkl` to be placed in `backend/data/models/`
+**Important**: The backend requires the trained model files to be placed in `backend/data/models/`:
+- `car_price_predictor_xgbr.pkl` (XGBoost)
+- `car_price_predictor_lgbm.pkl` (LightGBM)
+- `car_price_predictor_adaboost.pkl` (AdaBoost)
 
 ### 3. Frontend Setup
 
@@ -127,9 +138,11 @@ The backend will start on: **http://localhost:5000**
 You should see:
 ```
 [OK] Model loaded: XGBoost
+[OK] Model loaded: LightGBM
+[OK] Model loaded: AdaBoost
 Flask app running on http://localhost:5000
-Models loaded: 1
-Available models: ['xgboost']
+Models loaded: 3
+Available models: ['xgboost', 'lightgbm', 'adaboost']
 ```
 
 ### Start Frontend Development Server
@@ -342,16 +355,16 @@ VITE_API_BASE_URL=http://localhost:5000/api
 
 This project fulfills the MSc AI Machine Learning Assignment requirements:
 
-✓ Trained ML model integrated (XGBoost)
+✓ Trained ML models integrated (XGBoost, LightGBM, AdaBoost)
 ✓ User input functionality (14 features)
-✓ Prediction display with ensemble
+✓ Ensemble prediction display with confidence metrics
 ✓ SHAP explanations (bar chart + waterfall plot)
 ✓ Professional React + Flask implementation
-✓ Bonus features: Multiple models, async SHAP, price range visualization
+✓ Bonus features: Multiple models, async SHAP, price range visualization, caching
 
 ## Credits
 
-- **ML Model**: XGBoost with preprocessing pipeline
+- **ML Models**: XGBoost, LightGBM, AdaBoost with preprocessing pipelines
 - **SHAP**: Model interpretability
 - **Dataset**: Car price dataset from Sri Lanka
 
